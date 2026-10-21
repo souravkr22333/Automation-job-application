@@ -8,8 +8,7 @@
 **/*.pyo
 *.log
 .vite
-package-lock.json
-package.json
+
 *.local
 **/*.local
 **/./config.py
