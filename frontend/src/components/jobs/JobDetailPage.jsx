@@ -1,0 +1,478 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  Briefcase,
+  MapPin,
+  DollarSign,
+  Clock,
+  Link as LinkIcon,
+  Star,
+  StarOff,
+  Play,
+  CheckCircle,
+  BadgeCheck,
+  X,
+} from "lucide-react";
+import { toast } from "react-hot-toast";
+import api from "../../services/apiService";
+
+const Section = ({ title, children }) => (
+  <section className="mt-6">
+    <h2 className="text-white text-sm font-semibold tracking-wide uppercase opacity-90">
+      {title}
+    </h2>
+    <div className="mt-3 bg-black/40 border border-gray-800 rounded-lg p-4">
+      {children}
+    </div>
+  </section>
+);
+
+const Tag = ({ children, tone = "gray" }) => {
+  const tones = {
+    gray: "bg-gray-800/60 text-gray-200 border-gray-700",
+    teal: "bg-teal-900/30 text-teal-200 border-teal-800",
+    yellow: "bg-yellow-900/30 text-yellow-200 border-yellow-800",
+    green: "bg-green-900/30 text-green-200 border-green-800",
+    red: "bg-red-900/30 text-red-200 border-red-800",
+  };
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs border ${
+        tones[tone] || tones.gray
+      }`}
+    >
+      {children}
+    </span>
+  );
+};
+
+const JobDetailPage = () => {
+  const { jobId } = useParams();
+  const navigate = useNavigate();
+
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const matchTone = useMemo(() => {
+    const score = job?.match_score;
+    if (score == null) return "gray";
+    if (score >= 80) return "green";
+    if (score >= 60) return "yellow";
+    return "red";
+  }, [job?.match_score]);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        if (!jobId) return;
+        const res = await api.getJobById(jobId);
+        setJob(res.data.job || res.data);
+      } catch (e) {
+        console.error(e);
+        toast.error("Failed to load job details");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [jobId]);
+
+  const handleSaveToggle = async () => {
+    if (!job) return;
+    setSaving(true);
+    try {
+      if (job.is_saved) {
+        await api.unsaveJob(job.id);
+        toast.success("Job removed from saved list");
+      } else {
+        await api.saveJob(job.id);
+        toast.success("Job saved!");
+      }
+      // refresh job
+      const res = await api.getJobById(job.id);
+      setJob(res.data.job || res.data);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save job");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  console.log(job)
+
+  const handleApply = async () => {
+    if (!job) return;
+    setApplying(true);
+    try {
+      await api.applyToJob(job.id);
+      toast.success("Application submitted successfully!");
+      const res = await api.getJobById(job.id);
+      setJob(res.data.job || res.data);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to apply");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-sm opacity-80">Loading job details...</div>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-3 p-6">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Job not found</div>
+          <div className="text-sm opacity-70 mt-2">
+            The job may have been removed or you may not have access.
+          </div>
+        </div>
+        <button
+          onClick={() => navigate("/jobs")}
+          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg font-medium"
+        >
+          Back to Job Scout
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-black">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        {/* Top bar */}
+        <div className="flex items-center justify-between gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 text-gray-200 hover:text-white"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSaveToggle}
+              disabled={saving}
+              className="p-2 rounded-lg border border-gray-800 hover:bg-gray-900 disabled:opacity-50"
+              title={job.is_saved ? "Unsave" : "Save"}
+            >
+              {job.is_saved ? (
+                <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+              ) : (
+                <StarOff className="w-4 h-4 text-gray-400" />
+              )}
+            </button>
+
+            {job.tailored_resume?.supabase_url && (
+              <a
+                href={job.tailored_resume.supabase_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-purple-700 bg-purple-900/30 text-purple-200 hover:bg-purple-900/50"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <BadgeCheck className="w-4 h-4" /> View Tailored Resume
+              </a>
+            )}
+
+            <button
+              onClick={handleApply}
+              disabled={applying || job.is_applied}
+              className={`
+                px-4 py-2 rounded-lg font-medium border border-transparent
+                ${
+                  job.is_applied
+                    ? "bg-green-900/30 text-green-200 border-green-800/50 cursor-default"
+                    : "bg-teal-600 hover:bg-teal-700 text-white"
+                }
+                disabled:opacity-50
+              `}
+            >
+              {job.is_applied ? (
+                <span className="inline-flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4" /> Applied
+                </span>
+              ) : applying ? (
+                "Applying..."
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <Play className="w-4 h-4" /> Apply Now
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Header */}
+        <div className="mt-6 border border-gray-800 rounded-xl bg-gray-950/40 p-5">
+          <div className="flex gap-4 items-start flex-col sm:flex-row">
+            <div className="`flex-shrink-0`">
+              {job.company_logo ? (
+                <img
+                  src={job.company_logo}
+                  alt={job.company}
+                  className="w-14 h-14 rounded-lg object-contain bg-blue-950 p-1"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-lg `bg-gradient-to-br` from-teal-100 to-blue-100 dark:from-teal-900/30 dark:to-blue-900/30 flex items-center justify-center text-xl font-bold text-teal-600 dark:text-teal-400">
+                  {job.company?.charAt(0) || "?"}
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+                    {job.title}
+                  </h1>
+                  <div className="text-sm text-gray-300 mt-1 flex items-center gap-2">
+                    <Briefcase className="w-4 h-4" />
+                    <span>{job.company}</span>
+                  </div>
+                </div>
+
+                <div>
+                  {job.match_score != null && (
+                    <Tag tone={matchTone}>{job.match_score}% match</Tag>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-300">
+                <span className="inline-flex items-center gap-2">
+                  <MapPin className="w-4 h-4" /> {job.location || "Remote"}
+                </span>
+                {job.salary && (
+                  <span className="inline-flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" /> {job.salary}
+                  </span>
+                )}
+                {job.posted_date && (
+                  <span className="inline-flex items-center gap-2">
+                    <Clock className="w-4 h-4" /> {job.posted_date}
+                  </span>
+                )}
+                {job.source_display || job.source ? (
+                  <Tag tone="gray">{job.source_display || job.source}</Tag>
+                ) : null}
+              </div>
+
+              {job.apply_url && (
+                <div className="mt-4">
+                  <a
+                    href={job.apply_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-800 text-gray-200 hover:bg-gray-900"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <LinkIcon className="w-4 h-4" /> Apply on company site
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {job.is_saved != null && job.is_applied != null && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {job.is_saved && <Tag tone="teal">Saved</Tag>}
+              {job.is_applied && <Tag tone="green">Applied</Tag>}
+              {!job.is_saved && !job.is_applied && (
+                <Tag tone="gray">New</Tag>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Body sections */}
+        <div className="pb-16">
+          <Section title="Job Description">
+            <div className="text-sm text-gray-200 whitespace-pre-wrap">
+              {job.description || "No description available."}
+            </div>
+          </Section>
+
+          <Section title="Match & Fit Analysis">
+            <div className="space-y-3">
+              {job.fit_analysis ? (
+                <div className="text-sm text-gray-200 whitespace-pre-wrap">
+                  {job.fit_analysis}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400">No fit analysis found.</div>
+              )}
+
+              {job.recommended_keywords?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {job.recommended_keywords.map((k, idx) => (
+                    <Tag key={`${k}-${idx}`} tone="teal">
+                      {k}
+                    </Tag>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </Section>
+
+          {job.required_skills?.length ? (
+            <Section title="Required Skills">
+              <div className="flex flex-wrap gap-2">
+                {job.required_skills.map((s, idx) => (
+                  <Tag key={`${s}-${idx}`} tone="yellow">
+                    {s}
+                  </Tag>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {job.preferred_skills?.length ? (
+            <Section title="Preferred Skills">
+              <div className="flex flex-wrap gap-2">
+                {job.preferred_skills.map((s, idx) => (
+                  <Tag key={`${s}-${idx}`} tone="teal">
+                    {s}
+                  </Tag>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {job.missing_skills?.length ? (
+            <Section title="Missing Skills (Gap Analysis)">
+              <div className="flex flex-wrap gap-2">
+                {job.missing_skills.map((s, idx) => (
+                  <Tag key={`${s}-${idx}`} tone="red">
+                    {s}
+                  </Tag>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {job.key_responsibilities?.length ? (
+            <Section title="Key Responsibilities">
+              <ul className="text-sm text-gray-200 space-y-2 list-disc pl-5">
+                {job.key_responsibilities.map((r, idx) => (
+                  <li key={`${r}-${idx}`}>{r}</li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+
+          <Section title="Job Meta">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="text-gray-300">
+                <div className="opacity-70">Employment type</div>
+                <div className="text-white">{job.employment_type || ""}</div>
+              </div>
+              <div className="text-gray-300">
+                <div className="opacity-70">Experience required</div>
+                <div className="text-white">{job.experience_required || ""}</div>
+              </div>
+              <div className="text-gray-300">
+                <div className="opacity-70">Status</div>
+                <div className="text-white">{job.status_display || job.status}</div>
+              </div>
+              <div className="text-gray-300">
+                <div className="opacity-70">Discovered</div>
+                <div className="text-white">{job.discovered_at || ""}</div>
+              </div>
+            </div>
+
+            {/* Clickable Company Detail */}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('company_detail');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="text-teal-200 hover:text-teal-100 underline underline-offset-4 text-sm"
+              >
+                View Company Details
+              </button>
+            </div>
+          </Section>
+
+          <Section title="Company Details" />
+          <div id="company_detail" className="mt-2">
+            <div className="text-sm text-gray-200 space-y-3">
+              <div className="flex items-start gap-4">
+                {job.company_logo ? (
+                  <img
+                    src={job.company_logo}
+                    alt={job.company}
+                    className="w-12 h-12 rounded-lg object-contain bg-blue-950 p-1"
+                  />
+                ) : null}
+                <div>
+                  <div className="text-white font-semibold">{job.company || ""}</div>
+                  {job.company_website ? (
+                    <a
+                      href={job.company_website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-teal-200 hover:text-teal-100 block"
+                    >
+                      {job.company_website}
+
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              {job.company_slogan ? (
+                <div className="text-gray-200">
+                  <div className="opacity-70">Slogan</div>
+                  <div className="text-white">{job.company_slogan}</div>
+                </div>
+              ) : null}
+
+              {job.company_description ? (
+                <div>
+                  <div className="opacity-70">Description</div>
+                  <div className="text-white whitespace-pre-wrap">{job.company_description}</div>
+                </div>
+              ) : null}
+
+              {job.company_employees_count != null ? (
+                <div className="text-gray-200">
+                  <div className="opacity-70">Employees</div>
+                  <div className="text-white">{job.company_employees_count}</div>
+                </div>
+              ) : null}
+
+              {job.company_linkedin_url ? (
+                <a
+                  href={job.company_linkedin_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-teal-200 hover:text-teal-100 block"
+                >
+                  View on LinkedIn
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default JobDetailPage;
+

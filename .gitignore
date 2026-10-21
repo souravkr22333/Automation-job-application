@@ -1,0 +1,15 @@
+﻿node_modules
+.env
+.env.*
+**/.env
+**/.env.*
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.log
+.vite
+package-lock.json
+package.json
+*.local
+**/*.local
+**/./config.py
