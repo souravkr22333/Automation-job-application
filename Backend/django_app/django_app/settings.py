@@ -18,6 +18,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-n1c8^bx%h)o+daq%=5h
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() == 'true'
 
+# Railway provides the host dynamically
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 CSRF_TRUSTED_ORIGINS = os.getenv(
     'CSRF_TRUSTED_ORIGINS',
@@ -54,7 +55,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Must be here
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -64,7 +65,7 @@ MIDDLEWARE = [
     'core.middleware.AuditMiddleware',
 ]
 
-ROOT_URLCONF = 'django_app.urls' # Adjusted to match your likely structure
+ROOT_URLCONF = 'django_app.urls'
 
 TEMPLATES = [
     {
@@ -85,7 +86,6 @@ WSGI_APPLICATION = 'django_app.wsgi.application'
 
 
 # Database
-# Railway provides a DATABASE_URL, but if you are using individual PG variables:
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -102,7 +102,6 @@ DATABASES = {
 # ============================================================
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 
-# Use django-redis for caching
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
@@ -118,7 +117,6 @@ CACHES = {
 # ============================================================
 # CELERY CONFIGURATION
 # ============================================================
-# Use the Railway REDIS_URL for both broker and backend
 CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 
@@ -200,19 +198,34 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 ).split(',')
 
 # ============================================================
-# STATIC & MEDIA FILES
+# STATIC & MEDIA FILES (FIXED FOR WHITENOISE ON RAILWAY)
 # ============================================================
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
-# Ensure the directory exists
+
+# Only add STATICFILES_DIRS if the directory actually exists
 STATICFILES_DIRS = []
 static_dir = BASE_DIR / "static"
 if static_dir.exists():
     STATICFILES_DIRS.append(static_dir)
 
+# 🚨 THIS IS THE CRITICAL FIX FOR ADMIN CSS 🚨
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+
+# ============================================================
+# PROXY & SSL (REQUIRED FOR RAILWAY)
+# ============================================================
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # ============================================================
 # AUTH & INTERNATIONALIZATION
@@ -255,22 +268,20 @@ APIFY_TIMEOUT = int(os.getenv('APIFY_TIMEOUT', 300))
 # ============================================================
 # CELERY TASK EXECUTION SETTINGS
 # ============================================================
-CELERY_TASK_ALWAYS_EAGER = False # MUST be False on Railway
+CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
-# Retry settings
 CELERY_TASK_DEFAULT_RETRY_DELAY = 60
 CELERY_TASK_MAX_RETRIES = 5
 
-# Worker settings
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 50
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 512 * 1024 * 1024  # 512MB
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 512 * 1024 * 1024
 CELERY_WORKER_CONCURRENCY = 4
 
 # Ensure media directories exist
