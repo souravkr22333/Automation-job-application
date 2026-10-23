@@ -64,7 +64,7 @@ MIDDLEWARE = [
     'core.middleware.AuditMiddleware',
 ]
 
-ROOT_URLCONF = 'config.urls' # Adjusted to match your likely structure
+ROOT_URLCONF = 'django_app.urls' # Adjusted to match your likely structure
 
 TEMPLATES = [
     {
@@ -81,7 +81,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = 'django_app.wsgi.application'
 
 
 # Database
