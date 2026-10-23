@@ -9,13 +9,12 @@ const BASE_URL = '/resumes';
 
 const tailoringService = {
 
-  // ============================================================
-  // TEMPLATE MANAGEMENT
-  // ============================================================
+    // TEMPLATE MANAGEMENT
+  
 
-  /**
-   * Get all available resume templates
-   */
+  
+   // Get all available resume templates
+   
   getTemplates: async (params = {}) => {
     try {
       const response = await api.get(`${BASE_URL}/templates/`, { params });
@@ -26,9 +25,9 @@ const tailoringService = {
     }
   },
 
-  /**
-   * Get a specific template by ID
-   */
+  
+   //Get a specific template by ID
+   
   getTemplate: async (templateId) => {
     try {
       const response = await api.get(`${BASE_URL}/templates/${templateId}/`);
@@ -335,4 +334,3 @@ const tailoringService = {
 };
 
 export default tailoringService;
-

@@ -6,9 +6,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_app.settings')
+# 🚨 FIX: Ensure this matches your Django project folder name
+# If your settings.py is inside 'config/', this MUST be 'config.settings'
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
-app = Celery('django_app')
+# 🚨 FIX: The app name should match the settings module prefix
+app = Celery('config')
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
@@ -17,10 +20,10 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
 
-# Configure Celery with better error handling
 app.conf.update(
-    task_always_eager=True,
-    task_eager_propagates=True,
+    # 🚨 FIX: This MUST be False in production. It forces tasks to run synchronously if True.
+    task_always_eager=False,
+    task_eager_propagates=False,
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',

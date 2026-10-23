@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'https://automation-job-application-production.up.railway.app/api';
+// const API_URL = 'http://localhost:8000/api';
 
 export const jobApi = {
 
@@ -34,5 +35,3 @@ export const jobApi = {
         });
     },
 };
-
-

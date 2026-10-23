@@ -1,7 +1,8 @@
 // frontend/src/services/api.js
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+// const API_URL = 'http://localhost:8000/api';
+const API_URL = 'https://automation-job-application-production.up.railway.app/api';
 
 export const jobApi = {
   // Get all jobs
