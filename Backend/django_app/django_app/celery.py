@@ -8,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 # 🚨 FIX: Ensure this matches your Django project folder name
 # If your settings.py is inside 'config/', this MUST be 'config.settings'
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_app.settings')
 
 # 🚨 FIX: The app name should match the settings module prefix
-app = Celery('config')
+app = Celery('django_app')
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
