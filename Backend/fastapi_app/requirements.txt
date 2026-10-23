@@ -141,8 +141,8 @@ zstandard==0.25.0
 
 
 
-gunicorn (to serve the app)
+gunicorn 
 
-whitenoise (to serve static files easily)
+whitenoise
 
-python-decouple (to manage environment variables)
+python-decouple
