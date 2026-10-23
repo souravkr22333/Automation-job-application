@@ -186,7 +186,8 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         """Tailor resume for specific job"""
         try:
             response = httpx.post(
-                'http://localhost:8001/api/resumes/tailor',
+                'https://delightful-education-production-cd5d.up.railway.app/api/resumes/tailor',
+                # 'http://localhost:8001/api/resumes/tailor',
                 json={
                     'resume_text': resume.parsed_text,
                     'job_description': job.description,
@@ -233,7 +234,8 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         """Generate cover letter for job"""
         try:
             response = httpx.post(
-                'http://localhost:8001/api/ai/generate-cover-letter',
+                'https://delightful-education-production-cd5d.up.railway.app/api/ai/generate-cover-letter',
+                # 'http://localhost:8001/api/ai/generate-cover-letter',
                 json={
                     'user_id': str(resume.user.id),
                     'job_id': str(job.id),
@@ -273,7 +275,8 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         """Submit application via FastAPI/Playwright"""
         try:
             response = httpx.post(
-                'http://localhost:8001/api/applications/submit',
+                'https://delightful-education-production-cd5d.up.railway.app/api/applications/submit',
+                # 'http://localhost:8001/api/applications/submit',
                 json={
                     'user_id': str(user.id),
                     'job_id': str(job.id),
@@ -494,7 +497,8 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
                 try:
                     logger.info(f"Tailoring resume for: {job.title} at {job.company}")
                     tailor_response = httpx.post(
-                        'http://localhost:8001/api/resumes/tailor',
+                        'https://delightful-education-production-cd5d.up.railway.app/api/resumes/tailor',
+                        #'http://localhost:8001/api/resumes/tailor',
                         json={
                             'resume_text': resume.parsed_text,
                             'job_description': job.description or '',
@@ -776,7 +780,8 @@ class CoverLetterViewSet(viewsets.ModelViewSet):
             logger.info(f"Generating cover letter for: {job.title} at {job.company}")
 
             response = httpx.post(
-                'http://localhost:8001/api/ai/generate-cover-letter',
+                'https://delightful-education-production-cd5d.up.railway.app/api/ai/generate-cover-letter',
+                #'http://localhost:8001/api/ai/generate-cover-letter',
                 json={
                     'user_id': str(request.user.id),
                     'job_id': str(job.id),

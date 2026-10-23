@@ -20,7 +20,8 @@ from applications.models import Application, CoverLetter
 
 logger = logging.getLogger(__name__)
 
-FASTAPI_BASE_URL = "http://localhost:8001"
+FASTAPI_BASE_URL = "https://delightful-education-production-cd5d.up.railway.app/"
+# FASTAPI_BASE_URL = "http://localhost:8001"  # For local development
 
 SOURCE_MAP = {
     'apify_linkedin': 'official',
