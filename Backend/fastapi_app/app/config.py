@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
     
     # Database
-    DATABASE_URL: str = os.getenv("Database_URL")
+    DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL") or os.getenv("Database_URL")
 
     # Redis
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
@@ -31,8 +31,14 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://127.0.0.1:6379/0"
     
     # Supabase/S3 (for resume storage)
-    SUPABASE_URL: str = os.getenv("supabase_url_service_role_key")
-    SUPABASE_KEY: str = os.getenv("supabase_key_service_role_key")
+    SUPABASE_URL: Optional[str] = (
+        os.getenv("SUPABASE_URL") or os.getenv("supabase_url_service_role_key")
+    )
+    SUPABASE_KEY: Optional[str] = (
+        os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_SERVICE_KEY")
+        or os.getenv("supabase_key_service_role_key")
+    )
     
     # Playwright
     PLAYWRIGHT_HEADLESS: bool = True
