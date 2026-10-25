@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import { ListChecks, Trash2, Zap, Loader2, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import jobApi from "../../services/jobApi";
 import { useQueue } from "../../contexts/QueueContext";
@@ -11,8 +11,6 @@ const Addtoqueue = ({
   const {
     queueJobIds,
     jobStatuses,
-    isProcessing,
-    toggleJob,
     clearQueue,
     removeJobFromQueue,
     updateJobStatus,
@@ -97,13 +95,30 @@ const Addtoqueue = ({
           processedIds.add(res.job_id);
           if (res.status === "applied") {
             updateJobStatus(res.job_id, "done");
+          } else if (res.status === "pending_confirmation") {
+            updateJobStatus(res.job_id, "pending_confirmation");
+          } else if (res.status === "already_applied") {
+            updateJobStatus(res.job_id, "done");
+          } else if (res.status === "processing") {
+            updateJobStatus(res.job_id, "applying");
           } else if (res.status === "failed") {
             updateJobStatus(res.job_id, "failed");
           }
         });
 
-        const successful = result.results.filter((r) => r.status === "applied").length;
-        setSuccessMessage(successful + " job(s) auto-applied successfully");
+        const successful = result.results.filter(
+          (r) => r.status === "applied" || r.status === "already_applied"
+        ).length;
+        const pending = result.results.filter((r) => r.status === "pending_confirmation").length;
+        const failed = result.results.filter((r) => r.status === "failed");
+        setSuccessMessage(
+          successful + " job(s) auto-applied successfully" +
+            (pending ? "; " + pending + " submission(s) need confirmation" : "") +
+            (failed.length ? "; " + failed.length + " failed" : "")
+        );
+        if (failed.length) {
+          setError(failed[0].message || "One or more applications could not be submitted.");
+        }
       }
 
       queueJobIds.forEach((id) => {
@@ -122,7 +137,13 @@ const Addtoqueue = ({
       setError(errMsg);
       queueJobIds.forEach((id) => {
         if (jobStatuses[id] === "generating_resume" || jobStatuses[id] === "applying") {
-          updateJobStatus(id, "limit_reached");
+          updateJobStatus(
+            id,
+            e?.response?.status === 400 &&
+              String(e?.response?.data?.detail || "").toLowerCase().includes("limit")
+              ? "limit_reached"
+              : "failed"
+          );
         }
       });
     } finally {
@@ -143,6 +164,8 @@ const Addtoqueue = ({
       case "failed":
       case "limit_reached":
         return <AlertCircle className="w-3 h-3 text-red-400" />;
+      case "pending_confirmation":
+        return <AlertCircle className="w-3 h-3 text-yellow-400" />;
       default:
         return <Clock className="w-3 h-3 text-gray-500" />;
     }
@@ -160,13 +183,15 @@ const Addtoqueue = ({
       case "failed":
       case "limit_reached":
         return "border-red-500/50";
+      case "pending_confirmation":
+        return "border-yellow-500/50";
       default:
         return "border-gray-800";
     }
   };
 
   const isAnyProcessing = Object.values(jobStatuses).some(
-    (s) => s === "processing"
+    (s) => ["processing", "generating_resume", "applying"].includes(s)
   );
 
   return (
@@ -233,7 +258,7 @@ const Addtoqueue = ({
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
-                  <div>{getStatusIcon(job.id)}</div>
+                  <div title={jobStatuses[job.id] || "queued"}>{getStatusIcon(job.id)}</div>
                 </div>
               ))}
             </div>
@@ -310,4 +335,3 @@ const Addtoqueue = ({
 };
 
 export default Addtoqueue;
-

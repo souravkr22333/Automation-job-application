@@ -1,7 +1,3 @@
-"""
-Django settings for django_app project.
-"""
-
 from pathlib import Path
 import os
 from datetime import timedelta
@@ -19,10 +15,10 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-n1c8^bx%h)o+daq%=5h
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() == 'true'
 
 # Railway provides the host dynamically
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'http://127.0.0.1:8000/').split(',')
 CSRF_TRUSTED_ORIGINS = os.getenv(
     'CSRF_TRUSTED_ORIGINS',
-    'http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173'
+    'http://127.0.0.1:8000/,http://localhost:5173/'
 ).split(',')
 
 
@@ -101,6 +97,11 @@ DATABASES = {
 # REDIS & CACHING
 # ============================================================
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+FASTAPI_BASE_URL = os.getenv(
+    'FASTAPI_BASE_URL',
+    
+).rstrip('/')
+FASTAPI_INTERNAL_TOKEN = os.getenv('AUTO_APPLY_INTERNAL_TOKEN', '')
 
 CACHES = {
     'default': {
@@ -192,10 +193,11 @@ SIMPLE_JWT = {
 # ============================================================
 # CORS
 # ============================================================
+# CORS_ALLWED_ORIGINS= 'HTTP://localhost:5173/, HTTP://localhost:8000/ '
 CORS_ALLOWED_ORIGINS = os.getenv(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:8000'
-).split(',')
+     'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173/ , http://localhost:8000/',
+ ).split(',')
 
 # ============================================================
 # STATIC & MEDIA FILES (FIXED FOR WHITENOISE ON RAILWAY)

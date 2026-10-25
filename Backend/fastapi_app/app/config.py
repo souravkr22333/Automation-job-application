@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     
     # Playwright
     PLAYWRIGHT_HEADLESS: bool = True
+    AUTO_APPLY_INTERNAL_TOKEN: str = os.getenv("AUTO_APPLY_INTERNAL_TOKEN", "")
     
     # Scraping
     SCRAPE_DELAY_MIN: float = 1.0
@@ -58,5 +59,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 settings = Settings()

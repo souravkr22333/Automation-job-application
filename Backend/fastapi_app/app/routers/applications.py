@@ -1,23 +1,29 @@
 # backend/fastapi_app/routers/applications.py (add missing endpoints)
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from pydantic import AnyHttpUrl, BaseModel
 from typing import Optional, Dict, Any, List
-import uuid
 import logging
+import os
+import secrets
+import tempfile
+from urllib.parse import urlparse
 
-from ..submitters.playwright_submitter import ApplicationSubmitter
+import httpx
 from ..submitters.platform_submitters import SubmitFactory
 from ..celery_app import celery_app
+from ..config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+MAX_RESUME_SIZE = 10 * 1024 * 1024
+RESUME_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
 
 class SubmitApplicationRequest(BaseModel):
-    queue_item_id: str
-    user_id: str
-    job_id: str
-    tailored_resume_id: Optional[str] = None
+    queue_item_id: Optional[str] = None
+    user_data: Dict[str, Any]
+    job: Dict[str, Any]
+    resume_url: AnyHttpUrl
     cover_letter: str = ""
     platform: str = "unknown"
 
@@ -34,24 +40,84 @@ class BulkSubmitRequest(BaseModel):
 
 
 @router.post("/submit")
-async def submit_application(request: SubmitApplicationRequest):
-    """Submit application (Synchronous)"""
+async def submit_application(
+    request: SubmitApplicationRequest,
+    x_internal_token: Optional[str] = Header(default=None),
+):
+    """Download the tailored resume and submit it through the configured platform flow."""
+    configured_token = settings.AUTO_APPLY_INTERNAL_TOKEN
+    if not configured_token:
+        raise HTTPException(status_code=503, detail="Auto-apply service token is not configured")
+    if not x_internal_token or not secrets.compare_digest(x_internal_token, configured_token):
+        raise HTTPException(status_code=401, detail="Invalid internal service token")
+
+    resume_path = None
     try:
-        logger.info(f"📤 Submitting application for job: {request.job_id}")
-        
-        # Here you would implement actual Playwright automation
-        # For now, simulate successful submission
-        result = {
-            "status": "success",
-            "application_url": f"https://example.com/applied/{request.job_id}",
-            "message": "Application submitted successfully"
-        }
-        
-        return result
-        
+        job_url = request.job.get("url")
+        if not job_url:
+            raise HTTPException(status_code=422, detail="Job URL is required")
+
+        parsed_resume_url = urlparse(str(request.resume_url))
+        extension = os.path.splitext(parsed_resume_url.path)[1].lower()
+        if extension not in RESUME_EXTENSIONS:
+            extension = ".pdf"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as resume_file:
+            resume_path = resume_file.name
+            total_bytes = 0
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+                async with client.stream("GET", str(request.resume_url)) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes(64 * 1024):
+                        total_bytes += len(chunk)
+                        if total_bytes > MAX_RESUME_SIZE:
+                            raise HTTPException(status_code=413, detail="Resume exceeds 10 MB")
+                        resume_file.write(chunk)
+            if total_bytes == 0:
+                raise HTTPException(status_code=422, detail="Downloaded resume is empty")
+
+        submitter = SubmitFactory.get_submitter(request.platform)
+        result = await submitter.submit_application(
+            user_data=request.user_data,
+            job=request.job,
+            resume_path=resume_path,
+            cover_letter=request.cover_letter,
+            platform=request.platform,
+        )
+
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "application_url": result.get("application_url"),
+                "message": result.get("message", "Application submitted successfully"),
+            }
+        if result.get("status") == "pending":
+            return {
+                "status": "pending_confirmation",
+                "application_url": result.get("application_url"),
+                "message": result.get("message", "Submission was attempted but could not be confirmed"),
+            }
+
+        logger.warning(
+            "Application submission failed for queue item %s: %s",
+            request.queue_item_id,
+            result.get("reason", "Unknown submission error"),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=result.get("reason", "Application submission failed"),
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ Submission error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Submission error for queue item %s", request.queue_item_id)
+        raise HTTPException(status_code=502, detail="Unable to submit application") from e
+    finally:
+        if resume_path and os.path.exists(resume_path):
+            try:
+                os.unlink(resume_path)
+            except OSError:
+                logger.exception("Failed to remove temporary resume file %s", resume_path)
 
 @router.post("/bulk-submit", response_model=Dict[str, Any])
 async def bulk_submit_applications(request: BulkSubmitRequest, background_tasks: BackgroundTasks):

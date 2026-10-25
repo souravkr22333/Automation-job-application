@@ -32,7 +32,7 @@ export default function UploadResume() {
       // axios/browser will add the correct multipart boundary automatically.
       const res = await axios.post(
         'https://automation-job-application-production.up.railway.app/api/resumes/',
-        // "http://localhost:8000/api/resumes/",
+        //  "http://localhost:8000/api/resumes/",
         formData,
         {
           headers: {

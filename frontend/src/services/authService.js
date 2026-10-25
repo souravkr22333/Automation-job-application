@@ -1,6 +1,6 @@
 import axios from 'axios';
 const API_URL = 'https://automation-job-application-production.up.railway.app';
-// API_URL = 'http://localhost:8000';
+// const API_URL = 'http://localhost:8000';
 
 
 class AuthService {

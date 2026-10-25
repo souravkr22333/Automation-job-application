@@ -3,6 +3,7 @@
 import httpx
 import logging
 import uuid
+from django.conf import settings
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,6 +15,10 @@ from resumes.services import ResumeStorageService, PDFGenerator
 from .serializers import ApplicationSerializer, CoverLetterSerializer
 
 logger = logging.getLogger(__name__)
+
+
+class ApplicationSubmissionError(RuntimeError):
+    """A submission was explicitly rejected before a completed application was confirmed."""
 
 
 def _create_tailored_resume_pdf(user, job, original_resume, tailored_text, changes, keywords_added):
@@ -87,7 +92,7 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         """Use ApplicationQueueSerializer for queue-related actions"""
-        if hasattr(self, 'action') and self.action in ('list', 'retrieve', 'create', 'update', 'partial_update', 'destroy', 'status', 'auto_generate', 'bulk_apply'):
+        if hasattr(self, 'action') and self.action in ('list', 'retrieve', 'create', 'update', 'partial_update', 'destroy', 'status', 'auto_generate', 'auto_apply', 'bulk_apply'):
             from .serializers import ApplicationQueueSerializer
             return ApplicationQueueSerializer
         return super().get_serializer_class()
@@ -186,8 +191,7 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         """Tailor resume for specific job"""
         try:
             response = httpx.post(
-                'https://delightful-education-production-cd5d.up.railway.app/api/resumes/tailor',
-                # 'http://localhost:8001/api/resumes/tailor',
+                f'{settings.FASTAPI_BASE_URL}/api/resumes/tailor',
                 json={
                     'resume_text': resume.parsed_text,
                     'job_description': job.description,
@@ -234,8 +238,7 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         """Generate cover letter for job"""
         try:
             response = httpx.post(
-                'https://delightful-education-production-cd5d.up.railway.app/api/ai/generate-cover-letter',
-                # 'http://localhost:8001/api/ai/generate-cover-letter',
+                f'{settings.FASTAPI_BASE_URL}/api/ai/generate-cover-letter',
                 json={
                     'user_id': str(resume.user.id),
                     'job_id': str(job.id),
@@ -271,38 +274,66 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
             logger.error(f"Cover letter error: {str(e)}")
             raise
 
-    def _submit_application(self, user, job, tailored_resume, cover_letter):
+    def _submit_application(self, user, job, queue_item, tailored_resume, cover_letter):
         """Submit application via FastAPI/Playwright"""
+        if not settings.FASTAPI_INTERNAL_TOKEN:
+            raise RuntimeError('AUTO_APPLY_INTERNAL_TOKEN is not configured')
+
+        if not tailored_resume.supabase_url:
+            raise RuntimeError('Tailored resume PDF is not available for submission')
+
         try:
             response = httpx.post(
-                'https://delightful-education-production-cd5d.up.railway.app/api/applications/submit',
-                # 'http://localhost:8001/api/applications/submit',
+                f'{settings.FASTAPI_BASE_URL}/api/applications/submit',
                 json={
-                    'user_id': str(user.id),
-                    'job_id': str(job.id),
-                    'tailored_resume_id': str(tailored_resume.id),
+                    'queue_item_id': str(queue_item.id),
+                    'user_data': {
+                        'name': user.name,
+                        'email': user.email,
+                        'phone': user.phone,
+                    },
+                    'job': {
+                        'id': str(job.id),
+                        'url': job.url,
+                        'title': job.title,
+                        'company': job.company,
+                    },
+                    'resume_url': tailored_resume.supabase_url,
                     'cover_letter': cover_letter,
-                    'platform': job.source,
-                    'url': job.url
+                    'platform': job.source or 'unknown',
                 },
-                timeout=120.0
+                headers={'X-Internal-Token': settings.FASTAPI_INTERNAL_TOKEN},
+                timeout=300.0
             )
 
+            if 400 <= response.status_code < 500:
+                raise ApplicationSubmissionError(f"Submission failed: {response.text}")
             if response.status_code != 200:
-                raise Exception(f"Submission failed: {response.text}")
+                raise RuntimeError(f"Submission service error: {response.text}")
 
-            return response.json()
+            result = response.json()
+            if result.get('status') not in ('success', 'pending_confirmation'):
+                raise RuntimeError(
+                    result.get('message') or 'Submission service returned an invalid status'
+                )
+            return result
 
         except Exception as e:
             logger.error(f"Submission error: {str(e)}")
             raise
 
     def _get_user_auto_apply_count(self, user):
-        """Return how many auto-applies this user has already used today."""
-        return Application.objects.filter(
+        """Count confirmed and unconfirmed submissions against the daily limit."""
+        applied_count = Application.objects.filter(
             user=user,
             applied_at__date=now().date()
         ).count()
+        pending_count = ApplicationQueue.objects.filter(
+            user=user,
+            status=ApplicationQueue.Status.PENDING_CONFIRMATION,
+            updated_at__date=now().date(),
+        ).count()
+        return applied_count + pending_count
 
     @action(detail=False, methods=['post'])
     def auto_apply(self, request):
@@ -311,21 +342,38 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
         resume_id = request.data.get('resume_id')
         limit = 10
 
-        if not job_ids:
+        if not isinstance(job_ids, list) or not job_ids:
             return Response({
                 'error': 'job_ids is required (array of job IDs)'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            job_ids = list(dict.fromkeys(str(uuid.UUID(str(job_id))) for job_id in job_ids))
+        except (TypeError, ValueError, AttributeError):
+            return Response({
+                'error': 'job_ids must contain valid job IDs'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         used_today = self._get_user_auto_apply_count(request.user)
         remaining = limit - used_today
-        if remaining <= 0 or len(job_ids) > remaining:
+        already_applied_ids = {
+            str(job_id) for job_id in
+            Application.objects.filter(user=request.user, job_id__in=job_ids)
+            .values_list('job_id', flat=True)
+        }
+        requested_new_count = sum(str(job_id) not in already_applied_ids for job_id in job_ids)
+        if remaining <= 0 or requested_new_count > remaining:
             return Response({
                 'detail': f'Auto-apply limit reached. You have used {used_today}/{limit} auto-applies today.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         if resume_id:
             try:
-                resume = Resume.objects.get(id=resume_id, user=request.user)
+                resume = Resume.objects.get(id=uuid.UUID(str(resume_id)), user=request.user)
+            except (TypeError, ValueError, AttributeError):
+                return Response({
+                    'error': 'resume_id must be a valid resume ID'
+                }, status=status.HTTP_400_BAD_REQUEST)
             except Resume.DoesNotExist:
                 return Response({
                     'error': 'Resume not found'
@@ -339,8 +387,58 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
 
         results = []
         for job_id in job_ids:
+            queue_item = None
             try:
                 job = JobListing.objects.get(id=job_id)
+                existing_application = Application.objects.filter(
+                    user=request.user,
+                    job=job,
+                ).first()
+                if existing_application:
+                    ApplicationQueue.objects.filter(
+                        user=request.user,
+                        job=job,
+                    ).update(status=ApplicationQueue.Status.DONE)
+                    results.append({
+                        'job_id': str(job.id),
+                        'status': 'already_applied',
+                        'application_id': str(existing_application.id),
+                        'message': 'An application for this job already exists',
+                    })
+                    continue
+
+                existing_queue_item = ApplicationQueue.objects.filter(
+                    user=request.user,
+                    job=job,
+                ).first()
+                if (
+                    existing_queue_item
+                    and existing_queue_item.status == ApplicationQueue.Status.PENDING_CONFIRMATION
+                ):
+                    results.append({
+                        'job_id': str(job.id),
+                        'queue_item_id': str(existing_queue_item.id),
+                        'status': 'pending_confirmation',
+                        'message': existing_queue_item.error_message,
+                    })
+                    continue
+                if (
+                    existing_queue_item
+                    and existing_queue_item.status in (
+                        ApplicationQueue.Status.PROCESSING,
+                        ApplicationQueue.Status.GENERATING_RESUME,
+                        ApplicationQueue.Status.APPLYING,
+                        ApplicationQueue.Status.RETRYING,
+                    )
+                ):
+                    results.append({
+                        'job_id': str(job.id),
+                        'queue_item_id': str(existing_queue_item.id),
+                        'status': 'processing',
+                        'message': 'This application is already being processed',
+                    })
+                    continue
+
                 queue_item, _ = ApplicationQueue.objects.get_or_create(
                     user=request.user,
                     job=job,
@@ -358,16 +456,40 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
                 queue_item.save()
 
                 tailoring_result = self._tailor_resume(resume, job)
+                tailored_pdf = _create_tailored_resume_pdf(
+                    user=request.user,
+                    job=job,
+                    original_resume=resume,
+                    tailored_text=tailoring_result['tailored_resume'].parsed_text,
+                    changes=tailoring_result.get('changes', {}),
+                    keywords_added=[],
+                )
+                if not tailored_pdf.supabase_url:
+                    raise RuntimeError('Tailored resume PDF could not be stored')
+
                 cover_letter_result = self._generate_cover_letter(resume, job, 'professional')
 
+                queue_item.tailored_resume = tailored_pdf
+                queue_item.cover_letter = cover_letter_result['cover_letter']
                 queue_item.status = ApplicationQueue.Status.APPLYING
                 queue_item.save()
 
                 submission_result = self._submit_application(
-                    request.user, job,
-                    tailoring_result['tailored_resume'],
+                    request.user, job, queue_item, tailored_pdf,
                     cover_letter_result['cover_letter']
                 )
+                if submission_result['status'] == 'pending_confirmation':
+                    queue_item.status = ApplicationQueue.Status.PENDING_CONFIRMATION
+                    queue_item.application_url = submission_result.get('application_url') or ''
+                    queue_item.error_message = submission_result.get('message', '')
+                    queue_item.save()
+                    results.append({
+                        'job_id': str(job.id),
+                        'queue_item_id': str(queue_item.id),
+                        'status': 'pending_confirmation',
+                        'message': queue_item.error_message,
+                    })
+                    continue
 
                 application = Application.objects.create(
                     user=request.user,
@@ -375,16 +497,19 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
                     resume=tailoring_result['tailored_resume'],
                     cover_letter=cover_letter_result['cover_letter'],
                     status=Application.Status.APPLIED,
-                    application_url=job.url,
+                    application_url=submission_result.get('application_url') or job.url,
                     applied_at=now()
                 )
 
                 job.is_applied = True
                 job.save()
+                cover_letter_result['cover_letter_obj'].is_used = True
+                cover_letter_result['cover_letter_obj'].save(update_fields=['is_used'])
 
                 queue_item.status = ApplicationQueue.Status.DONE
                 queue_item.submitted_at = now()
-                queue_item.application_url = job.url
+                queue_item.application_url = submission_result.get('application_url') or job.url
+                queue_item.error_message = ''
                 queue_item.save()
 
                 results.append({
@@ -396,17 +521,31 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
                 })
             except Exception as exc:
                 try:
-                    queue_item = ApplicationQueue.objects.filter(user=request.user, job_id=job_id).first()
                     if queue_item:
-                        queue_item.status = ApplicationQueue.Status.FAILED
+                        uncertain_submission = (
+                            queue_item.status == ApplicationQueue.Status.APPLYING
+                            and not isinstance(exc, ApplicationSubmissionError)
+                        )
+                        queue_item.status = (
+                            ApplicationQueue.Status.PENDING_CONFIRMATION
+                            if uncertain_submission
+                            else ApplicationQueue.Status.FAILED
+                        )
                         queue_item.error_message = str(exc)[:500]
                         queue_item.save()
+                    else:
+                        uncertain_submission = False
                 except Exception:
-                    pass
+                    logger.exception("Failed to update queue status for job %s", job_id)
+                logger.exception("Auto-apply failed for job %s", job_id)
                 results.append({
                     'job_id': str(job_id),
-                    'status': 'failed',
-                    'message': str(exc)
+                    'status': 'pending_confirmation' if uncertain_submission else 'failed',
+                    'message': (
+                        'Submission outcome is uncertain. Verify the application on the job site before retrying.'
+                        if uncertain_submission
+                        else str(exc)
+                    )
                 })
 
         return Response({
@@ -649,8 +788,13 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
             'total': queue_items.count(),
             'pending': queue_items.filter(status=ApplicationQueue.Status.QUEUED).count(),
             'processing': queue_items.filter(status=ApplicationQueue.Status.PROCESSING).count(),
+            'applying': queue_items.filter(status=ApplicationQueue.Status.APPLYING).count(),
+            'generating_resume': queue_items.filter(status=ApplicationQueue.Status.GENERATING_RESUME).count(),
             'done': queue_items.filter(status=ApplicationQueue.Status.DONE).count(),
             'failed': queue_items.filter(status=ApplicationQueue.Status.FAILED).count(),
+            'pending_confirmation': queue_items.filter(
+                status=ApplicationQueue.Status.PENDING_CONFIRMATION
+            ).count(),
             'items': serializer.data
         })
 

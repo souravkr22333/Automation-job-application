@@ -42,7 +42,10 @@ const STATUS_ORDER = {
   done: 2,
   failed: 2,
   limit_reached: 2,
+  pending_confirmation: 2,
 };
+
+const FINAL_QUEUE_STATUSES = new Set(['done', 'failed', 'limit_reached', 'pending_confirmation']);
 
 export const QueueProvider = ({ children }) => {
   const [queueJobIds, setQueueJobIds] = useState(loadQueueFromStorage);
@@ -55,14 +58,20 @@ export const QueueProvider = ({ children }) => {
     saveQueueToStorage(queueJobIds);
   }, [queueJobIds]);
 
-  // Determine if all jobs are in final state (done/failed)
+  // Determine if all jobs are in a final state
   const allJobsFinal = useMemo(() => {
     if (queueJobIds.length === 0) return false;
     return queueJobIds.every((id) => {
       const status = jobStatuses[id];
-      return status === 'done' || status === 'failed';
+      return FINAL_QUEUE_STATUSES.has(status);
     });
   }, [queueJobIds, jobStatuses]);
+
+  useEffect(() => {
+    if (allJobsFinal && queueJobIds.length > 0) {
+      setIsProcessing(false);
+    }
+  }, [allJobsFinal, queueJobIds.length]);
 
   // Poll backend for status updates when there are active jobs
   useEffect(() => {
@@ -99,8 +108,8 @@ export const QueueProvider = ({ children }) => {
             return next;
           });
         }
-      } catch (e) {
-        // Silently fail on polling errors
+      } catch (error) {
+        console.error('Queue status polling failed:', error);
       }
     };
 

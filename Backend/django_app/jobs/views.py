@@ -1,6 +1,7 @@
 import httpx
 import logging
 from datetime import timedelta
+from django.conf import settings
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -20,9 +21,8 @@ from applications.models import Application, CoverLetter
 
 logger = logging.getLogger(__name__)
 
-FASTAPI_BASE_URL = "https://delightful-education-production-cd5d.up.railway.app"
-# FASTAPI_BASE_URL = "http://localhost:8001"  # For local development
-
+FASTAPI_BASE_URL = settings.FASTAPI_BASE_URL
+# FASTAPI_BASE_URL="http://127.0.0.1:8001"
 SOURCE_MAP = {
     'apify_linkedin': 'official',
     'apify_indeed': 'fast',
@@ -795,6 +795,16 @@ class JobListingViewSet(viewsets.ModelViewSet):
                 cover_letter_result['cover_letter'],
             )
 
+            if submission_result['status'] == 'pending_confirmation':
+                return Response(
+                    {
+                        'status': 'pending_confirmation',
+                        'application_url': submission_result.get('application_url'),
+                        'message': submission_result.get('message'),
+                    },
+                    status=status.HTTP_202_ACCEPTED,
+                )
+
             # Save application record
             logger.info("Saving application record...")
             application = Application.objects.create(
@@ -803,7 +813,7 @@ class JobListingViewSet(viewsets.ModelViewSet):
                 resume=tailoring_result['tailored_resume'],
                 cover_letter=cover_letter_result['cover_letter'],
                 status=Application.Status.APPLIED,
-                application_url=job.apply_url or job.url,
+                application_url=submission_result.get('application_url') or job.apply_url or job.url,
                 applied_at=timezone.now(),
             )
 
@@ -1046,23 +1056,52 @@ class JobListingViewSet(viewsets.ModelViewSet):
 
     def _submit_application(self, user, job, tailored_resume, cover_letter):
         """Submit application via FastAPI/Playwright."""
+        if not settings.FASTAPI_INTERNAL_TOKEN:
+            raise RuntimeError('AUTO_APPLY_INTERNAL_TOKEN is not configured')
+
+        from applications.views import _create_tailored_resume_pdf
+
+        tailored_pdf = _create_tailored_resume_pdf(
+            user=user,
+            job=job,
+            original_resume=tailored_resume.tailored_from or tailored_resume,
+            tailored_text=tailored_resume.parsed_text,
+            changes=tailored_resume.changes_summary,
+            keywords_added=[],
+        )
+        if not tailored_pdf.supabase_url:
+            raise RuntimeError('Tailored resume PDF is not available for submission')
+
         try:
             response = httpx.post(
                 f'{FASTAPI_BASE_URL}/api/applications/submit',
                 json={
-                    'user_id': str(user.id),
-                    'job_id': str(job.id),
-                    'tailored_resume_id': str(tailored_resume.id),
+                    'user_data': {
+                        'name': user.name,
+                        'email': user.email,
+                        'phone': user.phone,
+                    },
+                    'job': {
+                        'id': str(job.id),
+                        'url': job.apply_url or job.url,
+                        'title': job.title,
+                        'company': job.company,
+                    },
+                    'resume_url': tailored_pdf.supabase_url,
                     'cover_letter': cover_letter,
-                    'platform': job.source,
-                    'url': job.apply_url or job.url,
+                    'platform': job.source or 'unknown',
                 },
-                timeout=120.0,
+                headers={'X-Internal-Token': settings.FASTAPI_INTERNAL_TOKEN},
+                timeout=300.0,
             )
             if response.status_code != 200:
                 raise Exception(f"Submission failed: {response.text}")
-            return response.json()
+            result = response.json()
+            if result.get('status') not in ('success', 'pending_confirmation'):
+                raise RuntimeError(
+                    result.get('message') or 'Submission service returned an invalid status'
+                )
+            return result
         except Exception as e:
             logger.error(f"Submission error: {str(e)}")
             raise
-

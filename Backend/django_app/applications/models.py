@@ -19,6 +19,7 @@ class ApplicationQueue(models.Model):
         FAILED = 'failed', 'Failed'
         PAUSED = 'paused', 'Paused'
         LIMIT_REACHED = 'limit_reached', 'Daily limit reached'
+        PENDING_CONFIRMATION = 'pending_confirmation', 'Pending confirmation'
 
     class Priority(models.TextChoices):
         HIGH = 'high', 'High'

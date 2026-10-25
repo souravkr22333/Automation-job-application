@@ -1,8 +1,9 @@
 # backend/fastapi_app/submitters/playwright_submitter.py (complete with error handling)
 import asyncio
 import logging
+import os
 import time
-import random
+import tempfile
 
 from typing import Dict, Any, Optional, List
 from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 class ApplicationSubmitter:
     """Playwright-based application submitter with comprehensive error handling"""
     
-    def __init__(self, headless: bool = True):
-        self.headless = headless
+    def __init__(self, headless: Optional[bool] = None):
+        self.headless = settings.PLAYWRIGHT_HEADLESS if headless is None else headless
         self.max_retries = 3
         self.retry_delay = 2
     
@@ -35,14 +36,13 @@ class ApplicationSubmitter:
                 result = await self._submit_application_internal(
                     user_data, job, resume_path, cover_letter, platform
                 )
-                if result.get("status") == "success":
+                if result.get("status") in ("success", "pending"):
                     return result
-                elif attempt < self.max_retries - 1:
+                if attempt < self.max_retries - 1:
                     logger.warning(f"Retry {attempt + 1}/{self.max_retries} for {job.get('title')}")
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                     continue
-                else:
-                    return result
+                return result
             except Exception as e:
                 logger.error(f"Submission attempt {attempt + 1} failed: {str(e)}")
                 if attempt < self.max_retries - 1:
@@ -117,9 +117,18 @@ class ApplicationSubmitter:
                 
                 # Take screenshot for debugging
                 if not confirmation:
-                    screenshot_path = f"/tmp/submission_{job.get('id', 'unknown')}_{int(time.time())}.png"
-                    await page.screenshot(path=screenshot_path)
-                    logger.info(f"Screenshot saved to {screenshot_path}")
+                    screenshot_path = os.path.join(
+                        tempfile.gettempdir(),
+                        f"submission_{job.get('id', 'unknown')}_{int(time.time())}.png",
+                    )
+                    try:
+                        await page.screenshot(path=screenshot_path)
+                        logger.info(f"Screenshot saved to {screenshot_path}")
+                    except Exception:
+                        logger.exception("Failed to save submission screenshot")
+                        screenshot_path = None
+                else:
+                    screenshot_path = None
                 
                 return {
                     "status": "success" if confirmation else "pending",
