@@ -249,8 +249,11 @@ class ResumeStorageService:
         if not self.client:
             raise Exception("Supabase client not available. Please check your configuration.")
 
-        # Organize in user subfolder
-        storage_path = f"users/{user_id}/{filename}"
+        # Every generated version gets a new object key; retries must not collide
+        # with an earlier upload that used the same display filename.
+        name, extension = os.path.splitext(filename)
+        storage_filename = f"{name}_{uuid.uuid4().hex}{extension}"
+        storage_path = f"users/{user_id}/{storage_filename}"
 
         try:
             result = self.client.upload_file(
@@ -266,7 +269,7 @@ class ResumeStorageService:
                 'bucket': result['bucket'],
                 'file_size': len(file_bytes),
                 'content_type': content_type,
-                'filename': filename
+                'filename': storage_filename
             }
         except Exception as e:
             logger.error(f"Failed to upload bytes to Supabase bucket '{bucket_name}': {str(e)}")

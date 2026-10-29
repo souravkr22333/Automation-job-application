@@ -26,15 +26,17 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Do not commit the token to the repository or expose it to the frontend.
 
-## Install the browser
+## Railway deployment
 
-Install the Chromium browser binary in the FastAPI deployment environment after installing `requirements.txt`:
+Set the FastAPI service root directory to `Backend/fastapi_app` and select the **Dockerfile** builder. The included `Dockerfile` installs the matching Playwright Chromium binary and its Linux system dependencies into the image at build time. Redeploy after changing the builder/root directory.
+
+For a manual deployment without Docker, install the browser after installing `requirements.txt`:
 
 ```powershell
-python -m playwright install chromium
+python -m playwright install --with-deps chromium
 ```
 
-The runtime environment must include the system libraries required by Playwright Chromium. Use the Playwright browser installation instructions for the host OS/container when deploying to Linux.
+The deployment must use the same Playwright package version as `requirements.txt` when installing the browser binary.
 
 ## Operational limitations
 
