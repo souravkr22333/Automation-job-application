@@ -28,7 +28,7 @@ Do not commit the token to the repository or expose it to the frontend.
 
 ## Railway deployment
 
-Set the FastAPI service root directory to `Backend/fastapi_app` and select the **Dockerfile** builder. The included `Dockerfile` installs the matching Playwright Chromium binary and its Linux system dependencies into the image at build time. Redeploy after changing the builder/root directory.
+Set the FastAPI service root directory to `Backend/fastapi_app` and select the **Dockerfile** builder. The included `Dockerfile` installs the matching Playwright Chromium binary and its Linux system dependencies into the image at build time. Leave Railway's **Start Command** empty so it uses the Dockerfile `CMD`, which reads Railway's `PORT` environment variable directly. Redeploy after changing the builder/root directory.
 
 For a manual deployment without Docker, install the browser after installing `requirements.txt`:
 
