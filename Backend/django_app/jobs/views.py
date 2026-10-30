@@ -17,6 +17,7 @@ from .serializers import (
     JobSearchHistorySerializer
 )
 from resumes.models import Resume
+from resumes.services import build_tailored_resume_name
 from applications.models import Application, CoverLetter
 
 logger = logging.getLogger(__name__)
@@ -995,7 +996,7 @@ class JobListingViewSet(viewsets.ModelViewSet):
             data = response.json()
             tailored_resume = Resume.objects.create(
                 user=resume.user,
-                name=f"{resume.name} - Tailored for {job.company}",
+                name=build_tailored_resume_name(resume.name, job.company),
                 supabase_url=resume.supabase_url,
                 supabase_path=resume.supabase_path,
                 supabase_bucket=resume.supabase_bucket,

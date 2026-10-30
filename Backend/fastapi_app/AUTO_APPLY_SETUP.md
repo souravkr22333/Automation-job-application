@@ -26,17 +26,15 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Do not commit the token to the repository or expose it to the frontend.
 
-## Railway deployment
+## Railway deployment without Docker
 
-Set the FastAPI service root directory to `Backend/fastapi_app` and select the **Dockerfile** builder. The included `Dockerfile` installs the matching Playwright Chromium binary and its Linux system dependencies into the image at build time. Leave Railway's **Start Command** empty so it uses the Dockerfile `CMD`, which reads Railway's `PORT` environment variable directly. Redeploy after changing the builder/root directory.
+Set the FastAPI service root directory to `Backend/fastapi_app` and use the Nixpacks builder. The `nixpacks.toml` file installs Chromium's Linux shared-library dependencies into the runtime image. Set the build command to:
 
-For a manual deployment without Docker, install the browser after installing `requirements.txt`:
-
-```powershell
-python -m playwright install --with-deps chromium
+```sh
+python -m pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright python -m playwright install chromium
 ```
 
-The deployment must use the same Playwright package version as `requirements.txt` when installing the browser binary.
+Set `PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright` in the FastAPI service variables as well, so Playwright uses the same browser directory at runtime. Use the Procfile start command and clear the build cache before redeploying. Confirm the build logs show the Chromium install finishing successfully.
 
 ## Operational limitations
 

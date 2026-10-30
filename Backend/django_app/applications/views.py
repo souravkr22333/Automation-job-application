@@ -11,7 +11,7 @@ from django.utils.timezone import now
 from .models import Application, ApplicationQueue, CoverLetter
 from jobs.models import JobListing
 from resumes.models import Resume, TailoredResume
-from resumes.services import ResumeStorageService, PDFGenerator
+from resumes.services import ResumeStorageService, PDFGenerator, build_tailored_resume_name
 from .serializers import ApplicationSerializer, CoverLetterSerializer
 
 logger = logging.getLogger(__name__)
@@ -209,7 +209,7 @@ class ApplicationQueueViewSet(viewsets.ModelViewSet):
 
             tailored_resume = Resume.objects.create(
                 user=resume.user,
-                name=f"{resume.name} - Tailored for {job.company}",
+                name=build_tailored_resume_name(resume.name, job.company),
                 supabase_url=resume.supabase_url,
                 supabase_path=resume.supabase_path,
                 supabase_bucket=resume.supabase_bucket,

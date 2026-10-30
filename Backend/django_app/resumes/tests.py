@@ -1,10 +1,25 @@
 import unittest
 from unittest.mock import Mock
 
-from .services import ResumeStorageService
+from .services import ResumeStorageService, build_tailored_resume_name
 
 
 class ResumeStorageServiceTests(unittest.TestCase):
+    def test_tailored_resume_name_respects_database_field_limit(self):
+        long_resume_name = 'R' * 255
+        long_company_name = 'C' * 300
+
+        tailored_name = build_tailored_resume_name(long_resume_name, long_company_name)
+
+        self.assertEqual(len(tailored_name), 255)
+        self.assertTrue(tailored_name.endswith(long_company_name[-255:]))
+
+    def test_tailored_resume_name_keeps_suffix_when_resume_name_is_long(self):
+        tailored_name = build_tailored_resume_name('R' * 255, 'Sony')
+
+        self.assertLessEqual(len(tailored_name), 255)
+        self.assertTrue(tailored_name.endswith(' - Tailored for Sony'))
+
     def test_upload_bytes_uses_a_unique_storage_path_for_repeated_filenames(self):
         service = ResumeStorageService.__new__(ResumeStorageService)
         service.client = Mock()

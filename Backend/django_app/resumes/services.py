@@ -17,6 +17,14 @@ from core.supabase_client import supabase_client
 logger = logging.getLogger(__name__)
 
 
+def build_tailored_resume_name(resume_name: str, company_name: str) -> str:
+    """Build a descriptive resume name within the model's 255-character limit."""
+    suffix = f" - Tailored for {company_name}"
+    if len(suffix) >= 255:
+        return suffix[-255:]
+    return f"{resume_name[:255 - len(suffix)]}{suffix}"
+
+
 class ResumeParser:
     """Parse resume files and extract information"""
 
